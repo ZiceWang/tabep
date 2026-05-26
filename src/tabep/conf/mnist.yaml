@@ -1,0 +1,80 @@
+seed: 42
+experiment_name: tabep-mnist
+
+test_after_fit: true
+
+hydra:
+  run:
+    dir: outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  job:
+    chdir: false
+
+paths:
+  output_dir: ${hydra:runtime.output_dir}
+  checkpoint_dir: ${hydra:runtime.output_dir}/checkpoints
+
+model:
+  input_size: 784
+  hidden_size: 512
+  hidden_layers: 5
+  output_size: 10
+  rho: hardtanh
+  weight_scale: 0.014
+  fhn_delta: 0.75
+  fhn_epsilon: 0.85
+  fhn_alpha: 1.08
+  fhn_beta: 0.0
+
+eqprop:
+  beta_nudge: 0.9
+  free_steps: 55
+  nudge_steps: 14
+  dt: 0.1
+
+optim:
+  lr: 1.0e-3
+  weight_decay: 0.0
+
+data:
+  name: mnist
+  batch_size: 64
+  eval_batch_size: 256
+  limit_train: null
+  limit_test: null
+  num_workers: 0
+
+trainer:
+  max_epochs: 20
+  accelerator: auto
+  devices: 1
+  precision: 32
+  log_every_n_steps: 20
+  limit_train_batches: null
+  limit_val_batches: null
+  deterministic: false
+  gradient_clip_val: 0.0
+  accumulate_grad_batches: 1
+
+checkpoint:
+  enabled: true
+  filename: epoch={epoch:02d}-val_acc={val_acc:.4f}
+  monitor: val_acc
+  mode: max
+  save_last: true
+  save_top_k: 1
+
+resume:
+  ckpt_path: null
+
+logging:
+  rich_progress: true
+  lr_monitor: true
+  csv:
+    enabled: true
+  swanlab:
+    enabled: false
+    project: tabep
+    experiment_name: ${experiment_name}
+
+performance:
+  float32_matmul_precision: high

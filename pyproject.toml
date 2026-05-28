@@ -24,6 +24,7 @@ dependencies = [
 [project.scripts]
 tabep = "tabep.cli:main"
 tabep-drug200 = "tabep.tabular_benchmark:main"
+tabep-drug200-clustering = "tabep.reports.drug200_clustering:main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

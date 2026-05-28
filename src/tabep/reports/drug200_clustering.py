@@ -30,7 +30,42 @@ METHOD_NAMES = {
     "agglomerative": "Agglomerative",
     "nsga2": "NSGA-II multi-objective",
 }
+PUBLICATION_RCPARAMS = {
+    "font.family": ["Arial", "Helvetica", "DejaVu Sans", "sans-serif"],
+    "font.size": 15,
+    "axes.spines.right": False,
+    "axes.spines.top": False,
+    "axes.linewidth": 2.0,
+    "legend.frameon": False,
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
+    "svg.fonttype": "none",
+}
+PALETTE = {
+    "blue_main": "#0F4D92",
+    "blue_secondary": "#3775BA",
+    "green_1": "#DDF3DE",
+    "green_2": "#AADCA9",
+    "green_3": "#8BCF8B",
+    "red_1": "#F6CFCB",
+    "red_2": "#E9A6A1",
+    "red_strong": "#B64342",
+    "neutral": "#CFCECE",
+    "neutral_dark": "#4D4D4D",
+    "highlight": "#FFD700",
+}
+METHOD_COLORS = {
+    "kmeans": PALETTE["blue_secondary"],
+    "fuzzy_cmeans": PALETTE["green_3"],
+    "dbscan": PALETTE["red_2"],
+    "agglomerative": PALETTE["blue_main"],
+    "nsga2": PALETTE["highlight"],
+}
+CLUSTER_COLORS = [PALETTE["blue_main"], PALETTE["green_3"], PALETTE["red_strong"], "#42949E", "#9A4D8E", PALETTE["neutral_dark"]]
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+plt.rcParams.update(PUBLICATION_RCPARAMS)
 
 
 def encode_feature(series: pd.Series, name: str) -> np.ndarray:
@@ -487,31 +522,36 @@ def evaluate(x: np.ndarray, labels: np.ndarray, drug_labels: np.ndarray) -> dict
     }
 
 
+def save_figure(fig: plt.Figure, out_path: Path) -> None:
+    fig.tight_layout(pad=2)
+    fig.savefig(out_path.with_suffix(".pdf"), dpi=300, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".png"), dpi=300, bbox_inches="tight")
+
+
 def plot_clusters(raw_x: np.ndarray, labels: np.ndarray, drugs: list[str], feature_pair: tuple[str, str], method: str, metrics_row: dict[str, float | int], out_path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(6.2, 4.8))
+    fig, ax = plt.subplots(figsize=(6.4, 4.9))
     unique = sorted(set(labels.tolist()))
-    cmap = plt.get_cmap("tab10")
     markers = ["o", "s", "^", "D", "P"]
     drug_to_marker = {drug: markers[i % len(markers)] for i, drug in enumerate(DRUG_ORDER)}
     for lab in unique:
         mask_lab = labels == lab
-        color = "#999999" if lab < 0 else cmap(lab % 10)
+        color = PALETTE["neutral"] if lab < 0 else CLUSTER_COLORS[lab % len(CLUSTER_COLORS)]
         name = "noise" if lab < 0 else f"cluster {lab}"
         for drug in DRUG_ORDER:
             mask = mask_lab & (np.array(drugs) == drug)
             if np.any(mask):
-                ax.scatter(raw_x[mask, 0], raw_x[mask, 1], s=38, c=[color], marker=drug_to_marker[drug], edgecolors="white", linewidths=0.5, alpha=0.88, label=f"{name}, {drug}")
+                ax.scatter(raw_x[mask, 0], raw_x[mask, 1], s=54, c=[color], marker=drug_to_marker[drug], edgecolors="black", linewidths=0.45, alpha=0.86, label=f"{name}, {drug}")
     handles, labels_text = ax.get_legend_handles_labels()
     compact = dict(zip(labels_text, handles, strict=False))
-    ax.legend(compact.values(), compact.keys(), fontsize=6, ncol=2, frameon=True, loc="best")
+    ax.legend(compact.values(), compact.keys(), fontsize=6.5, ncol=2, loc="best", handletextpad=0.25, columnspacing=0.7)
     ax.set_xlabel(feature_pair[0])
     ax.set_ylabel(feature_pair[1])
     ax.set_title(f"{METHOD_NAMES[method]} on {feature_pair[0]}-{feature_pair[1]}")
-    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.45)
+    ax.grid(axis="both", linestyle="--", linewidth=0.7, color=PALETTE["neutral"], alpha=0.45)
+    ax.tick_params(width=1.6, length=5)
     text = f"k={metrics_row['clusters']}  sil={metrics_row['silhouette']:.3f}  NMI={metrics_row['nmi_vs_drug']:.3f}"
-    ax.text(0.01, 0.99, text, transform=ax.transAxes, va="top", ha="left", fontsize=8, bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"})
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=180)
+    ax.text(0.02, 0.98, text, transform=ax.transAxes, va="top", ha="left", fontsize=9, bbox={"facecolor": "white", "alpha": 0.86, "edgecolor": PALETTE["neutral"], "linewidth": 0.8})
+    save_figure(fig, out_path)
     plt.close(fig)
 
 
@@ -544,36 +584,47 @@ def run_pair(df: pd.DataFrame, feature_pair: tuple[str, str], out_fig_dir: Path,
             row["min_samples"] = min_samples
         rows.append(row)
         stem = f"{feature_pair[0]}__{feature_pair[1]}__{method}".replace("/", "_")
-        plot_clusters(raw_x, labels, drugs, feature_pair, method, metrics_row, out_fig_dir / f"{stem}.png")
+        plot_clusters(raw_x, labels, drugs, feature_pair, method, metrics_row, out_fig_dir / stem)
     return rows
 
 
 def make_summary_plots(metrics: pd.DataFrame, out_fig_dir: Path) -> None:
     best = metrics.sort_values("nmi_vs_drug", ascending=False).groupby(["feature_x", "feature_y"], as_index=False).first()
     labels = [f"{r.feature_x}-{r.feature_y}" for r in best.itertuples()]
-    fig, ax = plt.subplots(figsize=(9.5, 4.8))
-    ax.bar(labels, best["nmi_vs_drug"], color="#4C78A8")
+    colors = [METHOD_COLORS[str(m)] for m in best["method"]]
+    fig, ax = plt.subplots(figsize=(10.5, 5.0))
+    bars = ax.bar(labels, best["nmi_vs_drug"], color=colors, edgecolor="black", linewidth=1.2)
+    for bar, value in zip(bars, best["nmi_vs_drug"], strict=False):
+        ax.text(bar.get_x() + bar.get_width() / 2, float(value) + 0.012, f"{value:.2f}", ha="center", va="bottom", fontsize=9)
     ax.set_ylabel("Best NMI with Drug")
     ax.set_title("Best feature-pair correlation with drug labels")
     ax.tick_params(axis="x", rotation=45)
-    ax.grid(axis="y", linestyle="--", alpha=0.4)
-    fig.tight_layout()
-    fig.savefig(out_fig_dir / "best_feature_pair_nmi.png", dpi=180)
+    ax.tick_params(width=1.6, length=5)
+    ax.set_ylim(0, max(0.72, float(best["nmi_vs_drug"].max()) + 0.08))
+    ax.grid(axis="y", linestyle="--", linewidth=0.7, color=PALETTE["neutral"], alpha=0.45)
+    method_handles = [plt.Rectangle((0, 0), 1, 1, color=METHOD_COLORS[m], ec="black", lw=1.0) for m in METHOD_ORDER]
+    ax.legend(method_handles, [METHOD_NAMES[m] for m in METHOD_ORDER], fontsize=9, ncol=2, loc="upper right")
+    save_figure(fig, out_fig_dir / "best_feature_pair_nmi")
     plt.close(fig)
 
     pivot = metrics.pivot_table(index="method", values=["silhouette", "nmi_vs_drug", "purity_vs_drug"], aggfunc="mean").loc[METHOD_ORDER]
-    fig, ax = plt.subplots(figsize=(8.0, 4.8))
+    fig, ax = plt.subplots(figsize=(9.2, 5.0))
     x = np.arange(len(pivot.index))
     width = 0.25
+    metric_colors = [PALETTE["blue_main"], PALETTE["green_3"], PALETTE["red_2"]]
+    hatches = ["", "//", "\\\\"]
     for i, col in enumerate(["silhouette", "nmi_vs_drug", "purity_vs_drug"]):
-        ax.bar(x + (i - 1) * width, pivot[col], width=width, label=col)
+        bars = ax.bar(x + (i - 1) * width, pivot[col], width=width, label=col, color=metric_colors[i], edgecolor="black", linewidth=1.2, hatch=hatches[i], alpha=0.92)
+        for bar, value in zip(bars, pivot[col], strict=False):
+            ax.text(bar.get_x() + bar.get_width() / 2, float(value) + 0.012, f"{value:.2f}", ha="center", va="bottom", fontsize=8)
     ax.set_xticks(x)
     ax.set_xticklabels([METHOD_NAMES[m] for m in pivot.index], rotation=25, ha="right")
     ax.set_title("Average clustering quality across 10 feature pairs")
-    ax.grid(axis="y", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(out_fig_dir / "method_average_metrics.png", dpi=180)
+    ax.set_ylim(0, max(0.85, float(pivot.max().max()) + 0.1))
+    ax.tick_params(width=1.6, length=5)
+    ax.grid(axis="y", linestyle="--", linewidth=0.7, color=PALETTE["neutral"], alpha=0.45)
+    ax.legend(fontsize=10, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.02))
+    save_figure(fig, out_fig_dir / "method_average_metrics")
     plt.close(fig)
 
 

@@ -4,6 +4,8 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.11-orange.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+> 🤖 **给 AI 代理的提示**：本仓库包含 [`.agent/`](.agent/) 目录，内有结构化的规则、工作流和命令速查，专为 AI 阅读和实验复现设计。如果你是一个 AI 代理，建议优先阅读 `.agent/` 目录下的文件。
+
 **TabEP** 是一个基于 **平衡传播 (Equilibrium Propagation, EP)** 的表格数据分类框架。它将物理启发的能量松弛动力学引入神经网络训练，为中小型表格分类任务提供了一种兼具生物合理性与竞争性能的替代方案。
 
 > 📄 相关论文和实验报告见 [`papers/`](papers/) 目录。

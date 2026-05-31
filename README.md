@@ -1,5 +1,7 @@
 # tabep
 
+> 🤖 **Note for AI agents**: This repository contains a [`.agent/`](.agent/) directory with structured rules, workflows, and a command reference designed for AI consumption and experiment reproduction. If you are an AI agent, consider reading the files under `.agent/` first.
+
 PyTorch TabEP / equilibrium propagation training framework managed with `uv`.
 
 ## MNIST smoke test

@@ -12,6 +12,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.datasets import load_iris
 
 from tabep.tabular import load_drug200_dataframe
 
@@ -22,6 +23,8 @@ CATEGORICAL_ORDERS = {
     "Cholesterol": ["NORMAL", "HIGH"],
 }
 DRUG_ORDER = ["drugA", "drugB", "drugC", "drugX", "DrugY"]
+IRIS_FEATURES = ["sepal_length", "sepal_width", "petal_length", "petal_width"]
+IRIS_CLASSES = ["setosa", "versicolor", "virginica"]
 METHOD_ORDER = ["kmeans", "fuzzy_cmeans", "dbscan", "agglomerative", "nsga2"]
 METHOD_NAMES = {
     "kmeans": "K-means",
@@ -31,7 +34,7 @@ METHOD_NAMES = {
     "nsga2": "NSGA-II multi-objective",
 }
 PUBLICATION_RCPARAMS = {
-    "font.family": ["Arial", "Helvetica", "DejaVu Sans", "sans-serif"],
+    "font.family": ["DejaVu Sans", "sans-serif"],
     "font.size": 15,
     "axes.spines.right": False,
     "axes.spines.top": False,
@@ -181,7 +184,7 @@ def dbscan(x: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
     return relabel_by_size(labels)
 
 
-def choose_dbscan_params(x: np.ndarray) -> tuple[float, int]:
+def choose_dbscan_params(x: np.ndarray, *, target_k: int = 5) -> tuple[float, int]:
     min_samples = 5
     dists = np.sqrt(np.maximum(squared_distances(x, x), 0.0))
     sorted_d = np.sort(dists, axis=1)
@@ -193,10 +196,10 @@ def choose_dbscan_params(x: np.ndarray) -> tuple[float, int]:
         labels = dbscan(x, eps, min_samples)
         k = cluster_count(labels)
         noise = float(np.mean(labels < 0))
-        if 2 <= k <= 6:
+        if 2 <= k <= max(6, target_k + 1):
             score = silhouette_score(x, labels) - 0.25 * noise
         else:
-            score = -10.0 - abs(k - 3) - noise
+            score = -10.0 - abs(k - target_k) - noise
         if score > best_score:
             best_score = score
             best_eps = eps
@@ -388,7 +391,7 @@ def assign_by_centers(x: np.ndarray, centers: np.ndarray) -> np.ndarray:
     return np.argmin(squared_distances(x, centers), axis=1)
 
 
-def make_individual(x: np.ndarray, k: int, centers: np.ndarray) -> Individual:
+def make_individual(x: np.ndarray, k: int, centers: np.ndarray, *, target_k: int = 5) -> Individual:
     labels = assign_by_centers(x, centers)
     for _ in range(5):
         new_centers = centers.copy()
@@ -401,7 +404,7 @@ def make_individual(x: np.ndarray, k: int, centers: np.ndarray) -> Individual:
     labels = relabel_by_size(labels)
     comp = compactness(x, labels)
     sep = separation(x, labels)
-    k_penalty = abs(k - 5) / 5.0
+    k_penalty = abs(k - target_k) / max(float(target_k), 1.0)
     return Individual(k=k, centers=centers, labels=labels, objectives=(comp, -sep, k_penalty))
 
 
@@ -459,14 +462,14 @@ def crowding_distance(front: list[Individual]) -> None:
             front[i].crowding += (front[i + 1].objectives[obj] - front[i - 1].objectives[obj]) / (hi - lo)
 
 
-def nsga2_clustering(x: np.ndarray, *, seed: int = 42, pop_size: int = 40, generations: int = 35, k_min: int = 2, k_max: int = 6) -> Individual:
+def nsga2_clustering(x: np.ndarray, *, seed: int = 42, pop_size: int = 40, generations: int = 35, k_min: int = 2, k_max: int = 6, target_k: int = 5) -> Individual:
     rng = np.random.default_rng(seed)
 
     def random_individual() -> Individual:
         k = int(rng.integers(k_min, k_max + 1))
         idx = rng.choice(len(x), size=k, replace=False)
         centers = x[idx].astype(float).copy() + rng.normal(0, 0.05, size=(k, x.shape[1]))
-        return make_individual(x, k, centers)
+        return make_individual(x, k, centers, target_k=target_k)
 
     def crossover(a: Individual, b: Individual) -> Individual:
         k = int(rng.choice([a.k, b.k, int(round((a.k + b.k) / 2))]))
@@ -477,7 +480,7 @@ def nsga2_clustering(x: np.ndarray, *, seed: int = 42, pop_size: int = 40, gener
         centers += rng.normal(0, 0.08, size=centers.shape)
         if rng.random() < 0.25:
             centers[int(rng.integers(k))] = x[int(rng.integers(len(x)))]
-        return make_individual(x, k, centers)
+        return make_individual(x, k, centers, target_k=target_k)
 
     pop = [random_individual() for _ in range(pop_size)]
     for _ in range(generations):
@@ -502,8 +505,8 @@ def nsga2_clustering(x: np.ndarray, *, seed: int = 42, pop_size: int = 40, gener
         pop = new_pop
     fronts = non_dominated_sort(pop)
     first = fronts[0]
-    # Select a balanced compromise: high silhouette, low compactness, close to known five drug categories.
-    best = max(first, key=lambda ind: silhouette_score(x, ind.labels) - 0.08 * compactness(x, ind.labels) - 0.03 * abs(ind.k - 5))
+    # Select a balanced compromise: high silhouette, low compactness, close to the expected class count.
+    best = max(first, key=lambda ind: silhouette_score(x, ind.labels) - 0.08 * compactness(x, ind.labels) - 0.03 * abs(ind.k - target_k))
     best.labels = relabel_by_size(best.labels)
     return best
 
@@ -566,10 +569,10 @@ def run_pair(df: pd.DataFrame, feature_pair: tuple[str, str], out_fig_dir: Path,
     runs: dict[str, np.ndarray] = {}
     runs["kmeans"] = kmeans(x, 5, seed=seed)[0]
     runs["fuzzy_cmeans"] = fuzzy_cmeans(x, 5, seed=seed)[0]
-    eps, min_samples = choose_dbscan_params(x)
+    eps, min_samples = choose_dbscan_params(x, target_k=5)
     runs["dbscan"] = dbscan(x, eps, min_samples)
     runs["agglomerative"] = agglomerative(x, 5)
-    runs["nsga2"] = nsga2_clustering(x, seed=seed).labels
+    runs["nsga2"] = nsga2_clustering(x, seed=seed, target_k=5).labels
 
     for method, labels in runs.items():
         metrics_row = evaluate(x, labels, drug_labels)
@@ -586,6 +589,148 @@ def run_pair(df: pd.DataFrame, feature_pair: tuple[str, str], out_fig_dir: Path,
         stem = f"{feature_pair[0]}__{feature_pair[1]}__{method}".replace("/", "_")
         plot_clusters(raw_x, labels, drugs, feature_pair, method, metrics_row, out_fig_dir / stem)
     return rows
+
+
+def load_iris_dataframe() -> pd.DataFrame:
+    iris = load_iris(as_frame=True)
+    df = iris.frame.rename(
+        columns={
+            "sepal length (cm)": "sepal_length",
+            "sepal width (cm)": "sepal_width",
+            "petal length (cm)": "petal_length",
+            "petal width (cm)": "petal_width",
+            "target": "species_id",
+        }
+    )
+    df["species"] = df["species_id"].map({i: name for i, name in enumerate(IRIS_CLASSES)})
+    return df
+
+
+def plot_iris_clusters(raw_x: np.ndarray, labels: np.ndarray, species: list[str], feature_pair: tuple[str, str], method: str, metrics_row: dict[str, float | int], out_path: Path) -> None:
+    fig, ax = plt.subplots(figsize=(6.4, 4.9))
+    unique = sorted(set(labels.tolist()))
+    markers = ["o", "s", "^"]
+    species_to_marker = {name: markers[i % len(markers)] for i, name in enumerate(IRIS_CLASSES)}
+    for lab in unique:
+        mask_lab = labels == lab
+        color = PALETTE["neutral"] if lab < 0 else CLUSTER_COLORS[lab % len(CLUSTER_COLORS)]
+        name = "noise" if lab < 0 else f"cluster {lab}"
+        for cls in IRIS_CLASSES:
+            mask = mask_lab & (np.array(species) == cls)
+            if np.any(mask):
+                ax.scatter(raw_x[mask, 0], raw_x[mask, 1], s=58, c=[color], marker=species_to_marker[cls], edgecolors="black", linewidths=0.45, alpha=0.88, label=f"{name}, {cls}")
+    handles, labels_text = ax.get_legend_handles_labels()
+    compact = dict(zip(labels_text, handles, strict=False))
+    ax.legend(compact.values(), compact.keys(), fontsize=6.8, ncol=2, loc="best", handletextpad=0.25, columnspacing=0.7)
+    ax.set_xlabel(feature_pair[0].replace("_", " "))
+    ax.set_ylabel(feature_pair[1].replace("_", " "))
+    ax.set_title(f"{METHOD_NAMES[method]} on Iris {feature_pair[0]}-{feature_pair[1]}")
+    ax.grid(axis="both", linestyle="--", linewidth=0.7, color=PALETTE["neutral"], alpha=0.45)
+    ax.tick_params(width=1.6, length=5)
+    text = f"k={metrics_row['clusters']}  sil={metrics_row['silhouette']:.3f}  NMI={metrics_row['nmi_vs_drug']:.3f}"
+    ax.text(0.02, 0.98, text, transform=ax.transAxes, va="top", ha="left", fontsize=9, bbox={"facecolor": "white", "alpha": 0.86, "edgecolor": PALETTE["neutral"], "linewidth": 0.8})
+    save_figure(fig, out_path)
+    plt.close(fig)
+
+
+def run_iris_pair(df: pd.DataFrame, feature_pair: tuple[str, str], out_fig_dir: Path, seed: int) -> list[dict[str, object]]:
+    raw_x = df.loc[:, list(feature_pair)].astype(float).to_numpy()
+    x, _, _ = standardize(raw_x)
+    labels_true = df["species_id"].astype(int).to_numpy()
+    species = df["species"].astype(str).tolist()
+    rows: list[dict[str, object]] = []
+
+    runs: dict[str, np.ndarray] = {}
+    runs["kmeans"] = kmeans(x, 3, seed=seed)[0]
+    runs["fuzzy_cmeans"] = fuzzy_cmeans(x, 3, seed=seed)[0]
+    eps, min_samples = choose_dbscan_params(x, target_k=3)
+    runs["dbscan"] = dbscan(x, eps, min_samples)
+    runs["agglomerative"] = agglomerative(x, 3)
+    runs["nsga2"] = nsga2_clustering(x, seed=seed, k_min=2, k_max=5, target_k=3).labels
+
+    for method, labels in runs.items():
+        metrics_row = evaluate(x, labels, labels_true)
+        row = {
+            "dataset": "iris",
+            "feature_x": feature_pair[0],
+            "feature_y": feature_pair[1],
+            "method": method,
+            **metrics_row,
+        }
+        if method == "dbscan":
+            row["eps"] = eps
+            row["min_samples"] = min_samples
+        rows.append(row)
+        stem = f"iris__{feature_pair[0]}__{feature_pair[1]}__{method}".replace("/", "_")
+        plot_iris_clusters(raw_x, labels, species, feature_pair, method, metrics_row, out_fig_dir / stem)
+    return rows
+
+
+def make_iris_summary_plots(metrics: pd.DataFrame, out_fig_dir: Path) -> None:
+    best = metrics.sort_values("nmi_vs_drug", ascending=False).groupby(["feature_x", "feature_y"], as_index=False).first()
+    labels = [f"{r.feature_x.replace('_', ' ')}-{r.feature_y.replace('_', ' ')}" for r in best.itertuples()]
+    colors = [METHOD_COLORS[str(m)] for m in best["method"]]
+    fig, ax = plt.subplots(figsize=(9.0, 5.0))
+    bars = ax.bar(labels, best["nmi_vs_drug"], color=colors, edgecolor="black", linewidth=1.2)
+    for bar, value in zip(bars, best["nmi_vs_drug"], strict=False):
+        ax.text(bar.get_x() + bar.get_width() / 2, float(value) + 0.012, f"{value:.2f}", ha="center", va="bottom", fontsize=9)
+    ax.set_ylabel("Best NMI with species")
+    ax.set_title("Best Iris feature-pair correlation with species labels")
+    ax.tick_params(axis="x", rotation=35)
+    ax.tick_params(width=1.6, length=5)
+    ax.set_ylim(0, max(0.95, float(best["nmi_vs_drug"].max()) + 0.08))
+    ax.grid(axis="y", linestyle="--", linewidth=0.7, color=PALETTE["neutral"], alpha=0.45)
+    method_handles = [plt.Rectangle((0, 0), 1, 1, color=METHOD_COLORS[m], ec="black", lw=1.0) for m in METHOD_ORDER]
+    ax.legend(method_handles, [METHOD_NAMES[m] for m in METHOD_ORDER], fontsize=9, ncol=2, loc="upper left")
+    save_figure(fig, out_fig_dir / "iris_best_feature_pair_nmi")
+    plt.close(fig)
+
+    pivot = metrics.pivot_table(index="method", values=["silhouette", "nmi_vs_drug", "purity_vs_drug"], aggfunc="mean").loc[METHOD_ORDER]
+    fig, ax = plt.subplots(figsize=(9.2, 5.0))
+    x_pos = np.arange(len(pivot.index))
+    width = 0.25
+    metric_colors = [PALETTE["blue_main"], PALETTE["green_3"], PALETTE["red_2"]]
+    hatches = ["", "//", "\\\\"]
+    for i, col in enumerate(["silhouette", "nmi_vs_drug", "purity_vs_drug"]):
+        bars = ax.bar(x_pos + (i - 1) * width, pivot[col], width=width, label=col.replace("_vs_drug", ""), color=metric_colors[i], edgecolor="black", linewidth=1.2, hatch=hatches[i], alpha=0.92)
+        for bar, value in zip(bars, pivot[col], strict=False):
+            ax.text(bar.get_x() + bar.get_width() / 2, float(value) + 0.012, f"{value:.2f}", ha="center", va="bottom", fontsize=8)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels([METHOD_NAMES[m] for m in pivot.index], rotation=25, ha="right")
+    ax.set_title("Average Iris clustering quality across 6 feature pairs")
+    ax.set_ylim(0, max(1.02, float(pivot.max().max()) + 0.1))
+    ax.tick_params(width=1.6, length=5)
+    ax.grid(axis="y", linestyle="--", linewidth=0.7, color=PALETTE["neutral"], alpha=0.45)
+    ax.legend(fontsize=10, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.02))
+    save_figure(fig, out_fig_dir / "iris_method_average_metrics")
+    plt.close(fig)
+
+
+def run_iris_experiment(output_dir: Path, fig_dir: Path, seed: int) -> None:
+    df = load_iris_dataframe()
+    rows: list[dict[str, object]] = []
+    for pair in combinations(IRIS_FEATURES, 2):
+        rows.extend(run_iris_pair(df, pair, fig_dir, seed))
+    metrics = pd.DataFrame(rows)
+    metrics.to_csv(output_dir / "iris_clustering_metrics.csv", index=False)
+    best_by_pair = metrics.sort_values("nmi_vs_drug", ascending=False).groupby(["feature_x", "feature_y"], as_index=False).first()
+    best_by_pair.to_csv(output_dir / "iris_best_by_feature_pair.csv", index=False)
+    method_summary = metrics.groupby("method")[["silhouette", "davies_bouldin", "ari_vs_drug", "nmi_vs_drug", "purity_vs_drug", "clusters"]].mean().reset_index()
+    method_summary.to_csv(output_dir / "iris_method_summary.csv", index=False)
+    payload = {
+        "dataset": "iris",
+        "n_samples": int(len(df)),
+        "n_classes": len(IRIS_CLASSES),
+        "feature_pairs": best_by_pair.to_dict(orient="records"),
+        "method_summary": method_summary.to_dict(orient="records"),
+    }
+    (output_dir / "iris_clustering_summary.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    make_iris_summary_plots(metrics, fig_dir)
+    print("Saved Iris metrics to", output_dir / "iris_clustering_metrics.csv")
+    print("Top Iris feature pairs by best NMI:")
+    print(best_by_pair[["feature_x", "feature_y", "method", "clusters", "silhouette", "nmi_vs_drug", "purity_vs_drug"]].sort_values("nmi_vs_drug", ascending=False).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+    print("\nIris method summary:")
+    print(method_summary.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
 
 
 def make_summary_plots(metrics: pd.DataFrame, out_fig_dir: Path) -> None:
@@ -631,6 +776,8 @@ def make_summary_plots(metrics: pd.DataFrame, out_fig_dir: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Drug200 clustering experiment 2 without package clustering calls.")
     parser.add_argument("--dataset", default=str(PROJECT_ROOT / "data" / "raw" / "drug200" / "drug200.csv"), help="Local CSV path or Hugging Face dataset repo.")
+    parser.add_argument("--include-iris", action="store_true", help="Also run the classic Iris clustering benchmark.")
+    parser.add_argument("--only-iris", action="store_true", help="Run only the classic Iris clustering benchmark.")
     parser.add_argument("--split", default=None, help="Optional Hugging Face split name.")
     parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "outputs" / "paper2-drug200-clustering")
     parser.add_argument("--fig-dir", type=Path, default=None, help="Defaults to <output-dir>/figures.")
@@ -646,6 +793,9 @@ def main() -> None:
     fig_dir = args.fig_dir or output_dir / "figures"
     output_dir.mkdir(parents=True, exist_ok=True)
     fig_dir.mkdir(parents=True, exist_ok=True)
+    if args.only_iris:
+        run_iris_experiment(output_dir, fig_dir, args.seed)
+        return
     df = load_drug200_dataframe(args.dataset, split=args.split)
     rows: list[dict[str, object]] = []
     for pair in combinations(FEATURES, 2):
@@ -669,6 +819,9 @@ def main() -> None:
     print(best_by_pair[["feature_x", "feature_y", "method", "clusters", "silhouette", "nmi_vs_drug", "purity_vs_drug"]].sort_values("nmi_vs_drug", ascending=False).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
     print("\nMethod summary:")
     print(method_summary.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+    if args.include_iris:
+        print("\nRunning classic Iris clustering benchmark...")
+        run_iris_experiment(output_dir, fig_dir, args.seed)
 
 
 if __name__ == "__main__":

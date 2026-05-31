@@ -1,0 +1,93 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nektos/act/master/schema.json",
+  "description": "TabEP command reference for AI agents",
+  "commands": {
+    "setup": {
+      "description": "Setup the project environment",
+      "steps": [
+        { "cmd": "uv sync", "description": "Install all dependencies via uv" },
+        { "cmd": "source .venv/bin/activate", "description": "Activate virtual environment" },
+        { "cmd": "pip install -e .", "description": "Install package in editable mode (alternative)" }
+      ]
+    },
+    "smoke_test": {
+      "description": "Quick test to verify installation",
+      "cmd": "uv run tabep train mnist data.limit_train=256 data.limit_test=128 model.hidden_size=64 model.hidden_layers=2 eqprop.free_steps=5 eqprop.nudge_steps=2 trainer.max_epochs=1 trainer.accelerator=cpu",
+      "runtime": "~10 seconds"
+    },
+    "drug200_benchmark": {
+      "description": "Main Drug200 comparison (TabEP vs baselines)",
+      "cmd": "uv run tabep-drug200 --dataset data/raw/drug200/drug200.csv --output-dir outputs/tabep-drug200-proto --mlp-ablation",
+      "runtime": "~1-5 min"
+    },
+    "drug200_all_modes": {
+      "description": "Drug200 with all three training modes",
+      "cmd": "uv run tabep-drug200 --dataset data/raw/drug200/drug200.csv --output-dir outputs/tabep-drug200-all-modes --mlp-ablation --all-training-modes",
+      "runtime": "~3-15 min"
+    },
+    "drug200_gpu": {
+      "description": "Drug200 with TileLang GPU acceleration",
+      "cmd": "uv run tabep-drug200 --dataset data/raw/drug200/drug200.csv --output-dir outputs/tabep-drug200-gpu --mlp-ablation --tilelang-dynamics --device cuda",
+      "runtime": "~1-3 min (with GPU)"
+    },
+    "drug200_cv": {
+      "description": "Drug200 with 5-fold cross-validation",
+      "cmd": "uv run tabep-drug200 --dataset data/raw/drug200/drug200.csv --output-dir outputs/tabep-drug200-cv --mlp-ablation --cv",
+      "runtime": "~5-15 min"
+    },
+    "drug200_clustering": {
+      "description": "Drug200 feature-pair clustering analysis",
+      "cmd": "uv run python -m tabep.reports.drug200_clustering --dataset data/raw/drug200/drug200.csv --output-dir outputs/paper2-drug200-clustering",
+      "runtime": "~1-5 min"
+    },
+    "seed_study": {
+      "description": "Seed stability study (10 seeds)",
+      "cmd": "uv run python scripts/run_seed_study.py",
+      "runtime": "~10-30 min"
+    },
+    "efficiency": {
+      "description": "Efficiency analysis (steps vs runtime)",
+      "cmd": "uv run python scripts/compute_efficiency.py",
+      "runtime": "~2-5 min"
+    },
+    "figures_paper1": {
+      "description": "Generate Paper 1 figures",
+      "cmd": "uv run python scripts/make_paper1_figures.py",
+      "runtime": "~30 sec",
+      "prerequisites": ["drug200_benchmark"]
+    },
+    "help": {
+      "description": "Show CLI help",
+      "cmd": "uv run tabep --help"
+    },
+    "help_drug200": {
+      "description": "Show Drug200 benchmark options",
+      "cmd": "uv run tabep-drug200 --help"
+    }
+  },
+  "common_flags": {
+    "dataset": "--dataset <huggingface-repo-or-local-csv> (default: milotix/drug200)",
+    "output_dir": "--output-dir <path> (default: outputs/tabep-drug200)",
+    "mlp_ablation": "--mlp-ablation (run parameter-matched MLP baseline)",
+    "training_mode": "--training-mode {ep, gd, guided} (default: gd)",
+    "all_modes": "--all-training-modes (run all 3 training modes)",
+    "tilelang": "--tilelang-dynamics --device cuda (GPU acceleration)",
+    "cv": "--cv (5-fold cross-validation)",
+    "calibrate": "--calibrate-readout (post-training logistic calibration)",
+    "no_trajectory": "--no-trajectory-guidance (disable trajectory loss)"
+  },
+  "output_files": {
+    "drug200_benchmark": {
+      "path": "outputs/tabep-drug200-proto/drug200_benchmark.csv",
+      "columns": ["method", "accuracy", "macro_f1", "macro_precision", "macro_recall"]
+    },
+    "seed_study_summary": {
+      "path": "outputs/paper1-reproduction/seed_study_summary.csv",
+      "columns": ["metric", "mean", "std", "min", "max"]
+    },
+    "clustering_metrics": {
+      "path": "outputs/paper2-drug200-clustering/drug200_clustering_metrics.csv",
+      "columns": ["feature_x", "feature_y", "method", "clusters", "noise_ratio", "compactness", "separation", "silhouette", "davies_bouldin", "ari_vs_drug", "nmi_vs_drug", "purity_vs_drug", "eps", "min_samples"]
+    }
+  }
+}

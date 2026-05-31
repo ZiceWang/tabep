@@ -1,8 +1,14 @@
 # TabEP — 表格数据平衡传播框架
 
-[![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.11-orange.svg)](https://pytorch.org/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+<div align="center">
+
+[![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.11-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![CUDA](https://img.shields.io/badge/CUDA-12.8-76B900?style=for-the-badge&logo=nvidia&logoColor=white)]()
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![UV](https://img.shields.io/badge/managed%20with-uv-654FF0?style=for-the-badge&logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
+
+</div>
 
 > 🤖 **给 AI 代理的提示**：本仓库包含 [`.agent/`](.agent/) 目录，内有结构化的规则、工作流和命令速查，专为 AI 阅读和实验复现设计。如果你是一个 AI 代理，建议优先阅读 `.agent/` 目录下的文件。
 

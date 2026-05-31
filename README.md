@@ -1,5 +1,15 @@
 # tabep
 
+<div align="center">
+
+[![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.11-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![CUDA](https://img.shields.io/badge/CUDA-12.8-76B900?style=for-the-badge&logo=nvidia&logoColor=white)]()
+[![Python](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![UV](https://img.shields.io/badge/managed%20with-uv-654FF0?style=for-the-badge&logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
+
+</div>
+
 > 🤖 **Note for AI agents**: This repository contains a [`.agent/`](.agent/) directory with structured rules, workflows, and a command reference designed for AI consumption and experiment reproduction. If you are an AI agent, consider reading the files under `.agent/` first.
 
 PyTorch TabEP / equilibrium propagation training framework managed with `uv`.
